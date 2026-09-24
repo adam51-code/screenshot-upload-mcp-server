@@ -99,9 +99,31 @@ async function executeTool(env, name, args) {
   }
 }
 
-// ─── JSON-RPC handler (standard, identical every server) ───
+// ─── JSON-RPC handler ───
 async function handleRpc(request, env) {
-  const { method, params, id } = await request.json();
+  const body = await request.json();
+  const { method, params, id } = body;
+
+  // MCP initialize handshake
+  if (method === "initialize") {
+    return Response.json({
+      jsonrpc: "2.0",
+      id,
+      result: {
+        protocolVersion: "2024-11-05",
+        capabilities: { tools: {} },
+        serverInfo: {
+          name: "screenshot-upload-mcp-server",
+          version: "1.0.0",
+        },
+      },
+    });
+  }
+
+  // MCP notifications (no response needed, but return 200)
+  if (method === "notifications/initialized" || method && method.startsWith("notifications/")) {
+    return Response.json({ jsonrpc: "2.0", id: id || null, result: {} });
+  }
 
   if (method === "tools/list") {
     const tools = Object.entries(TOOLS).map(([name, def]) => ({
@@ -156,7 +178,7 @@ export default {
       return new Response(null, {
         headers: {
           "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "POST, OPTIONS",
+          "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
           "Access-Control-Allow-Headers": "Content-Type, Authorization",
         },
       });
