@@ -1,0 +1,6 @@
+name = "screenshot-upload-mcp-server"
+main = "src/index.js"
+compatibility_date = "2024-09-01"
+
+[vars]
+MCP_AUTH_TOKEN = "myMakeServer2026!"
