@@ -24,7 +24,6 @@ async function uploadToClickUp(env, taskId, imageBuffer, filename, contentType, 
   body.set(new Uint8Array(imageBuffer), preamble.length);
   body.set(epilogue, preamble.length + imageBuffer.byteLength);
 
-  // Try with custom_field_id query param if provided
   let url = `https://api.clickup.com/api/v2/task/${taskId}/attachment`;
   if (customFieldId) {
     url += `?custom_field_id=${customFieldId}`;
@@ -49,7 +48,6 @@ async function uploadToClickUp(env, taskId, imageBuffer, filename, contentType, 
 
 // ─── Helper: set custom field value via API ───
 async function setCustomFieldValue(env, taskId, fieldId, attachmentId) {
-  // Attempt 1: pass as array of objects with id
   const resp = await fetch(
     `https://api.clickup.com/api/v2/task/${taskId}/field/${fieldId}`,
     {
@@ -68,7 +66,6 @@ async function setCustomFieldValue(env, taskId, fieldId, attachmentId) {
 
   const err1 = await resp.text();
 
-  // Attempt 2: pass as plain string array
   const resp2 = await fetch(
     `https://api.clickup.com/api/v2/task/${taskId}/field/${fieldId}`,
     {
@@ -87,7 +84,6 @@ async function setCustomFieldValue(env, taskId, fieldId, attachmentId) {
 
   const err2 = await resp2.text();
 
-  // Attempt 3: pass with add syntax
   const resp3 = await fetch(
     `https://api.clickup.com/api/v2/task/${taskId}/field/${fieldId}`,
     {
@@ -114,6 +110,13 @@ async function setCustomFieldValue(env, taskId, fieldId, attachmentId) {
       add_syntax: err3.substring(0, 200),
     },
   };
+}
+
+// ─── Helper: extract token from auth header ───
+function extractToken(authHeader) {
+  if (!authHeader) return "";
+  // Strip "Bearer " prefix if present (case-insensitive)
+  return authHeader.replace(/^Bearer\s+/i, "").trim();
 }
 
 // ─── Tool definitions ───
@@ -157,10 +160,7 @@ async function executeTool(env, name, args) {
       if (!image_url) throw new Error("image_url is required");
       if (!task_id) throw new Error("task_id is required");
 
-      // 1. Download image
       const { buffer, contentType } = await fetchImage(image_url);
-
-      // 2. Upload to ClickUp (with custom_field_id query param if provided)
       const result = await uploadToClickUp(env, task_id, buffer, filename, contentType, custom_field_id);
 
       const output = {
@@ -173,7 +173,6 @@ async function executeTool(env, name, args) {
         extension: result.extension,
       };
 
-      // 3. If custom_field_id provided, also try the Set Field Value endpoint
       if (custom_field_id && result.id) {
         const fieldResult = await setCustomFieldValue(env, task_id, custom_field_id, result.id);
         output.custom_field_result = fieldResult;
@@ -200,7 +199,7 @@ async function handleRpc(request, env) {
         capabilities: { tools: {} },
         serverInfo: {
           name: "screenshot-upload-mcp-server",
-          version: "2.0.0",
+          version: "2.1.0",
         },
       },
     });
@@ -274,9 +273,11 @@ export default {
       return Response.json({ status: "ok", tools: Object.keys(TOOLS).length });
     }
 
-    const auth = request.headers.get("Authorization") || "";
-    const expected = `Bearer ${env.MCP_AUTH_TOKEN}`;
-    if (auth !== expected) {
+    // Flexible auth: compare tokens after stripping Bearer prefix from both
+    const authHeader = request.headers.get("Authorization") || "";
+    const receivedToken = extractToken(authHeader);
+    const expectedToken = env.MCP_AUTH_TOKEN;
+    if (receivedToken !== expectedToken) {
       return Response.json({ error: "Unauthorized" }, { status: 401 });
     }
 
